@@ -1,0 +1,1655 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 外呼评测系统 v2</title>
+  <!-- Tailwind CDN（开发用，生产用构建版） -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Alpine.js — 轻量响应式框架 -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <script>
+    // Tailwind 暗色模式配置
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#f97316', 600: '#ea580c', 700: '#c2410c' }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    .grade-A { @apply text-green-600 dark:text-green-400 font-bold; }
+    .grade-B { @apply text-blue-600 dark:text-blue-400 font-bold; }
+    .grade-C { @apply text-yellow-600 dark:text-yellow-400 font-bold; }
+    .grade-D { @apply text-orange-600 dark:text-orange-400 font-bold; }
+    .grade-F { @apply text-red-600 dark:text-red-400 font-bold; }
+    .review-badge { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200; }
+  </style>
+</head>
+
+<body
+  class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen transition-colors"
+  x-data="app()"
+  x-init="init()"
+  :class="{ 'dark': darkMode }"
+>
+  <!-- ── 顶部导航 ── -->
+  <nav class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-sm">AI</div>
+        <span class="font-semibold text-lg">外呼评测系统</span>
+        <span class="text-xs text-gray-400 dark:text-gray-500 hidden sm:block">v2.0</span>
+      </div>
+
+      <!-- 已登录导航 -->
+      <div x-show="token" class="flex items-center gap-2" x-cloak>
+        <template x-for="tab in navTabs()" :key="tab">
+          <button
+            @click="currentTab = tab"
+            :class="currentTab === tab
+              ? 'bg-brand-500 text-white'
+              : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'"
+            class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors hidden sm:block"
+            x-text="tabLabel(tab)"
+          ></button>
+        </template>
+        <button @click="darkMode = !darkMode" class="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
+          <svg x-show="!darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          <svg x-show="darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        </button>
+        <!-- 个人中心：头像 + 用户名 -->
+        <div class="flex items-center gap-2 cursor-pointer group" @click="currentTab = 'config'">
+          <!-- 头像（取用户名首字母） -->
+          <div class="w-7 h-7 rounded-full bg-brand-500 flex items-center justify-center text-white text-xs font-bold select-none"
+               x-text="currentUser ? currentUser.username.charAt(0).toUpperCase() : 'U'"></div>
+          <!-- 用户名，sm以上才显示 -->
+          <span class="hidden sm:block text-sm text-gray-600 dark:text-gray-300 group-hover:text-brand-500 transition-colors"
+                x-text="currentUser ? currentUser.username : ''"></span>
+        </div>
+        <div class="w-px h-4 bg-gray-200 dark:bg-gray-600"></div>
+        <button @click="logout()" class="text-sm text-gray-500 hover:text-red-500 px-2 py-1 transition-colors">退出</button>
+      </div>
+
+      <!-- 未登录 -->
+      <div x-show="!token" class="flex items-center gap-2">
+        <button @click="darkMode = !darkMode" class="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
+          <svg x-show="!darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          <svg x-show="darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        </button>
+      </div>
+    </div>
+    <!-- 移动端底部导航 -->
+    <div x-show="token" class="sm:hidden flex border-t border-gray-200 dark:border-gray-700" x-cloak>
+      <template x-for="tab in navTabs()" :key="tab">
+        <button
+          @click="currentTab = tab"
+          :class="currentTab === tab ? 'border-b-2 border-brand-500 text-brand-600' : 'text-gray-500'"
+          class="flex-1 py-2 text-xs font-medium"
+          x-text="tabLabel(tab)"
+        ></button>
+      </template>
+    </div>
+  </nav>
+
+  <!-- ── 主内容区 ── -->
+  <main class="max-w-7xl mx-auto px-4 py-6">
+
+    <!-- 登录/注册 -->
+    <div x-show="!token" class="max-w-sm mx-auto mt-16">
+      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8">
+        <h2 class="text-2xl font-bold mb-6 text-center" x-text="authMode === 'login' ? '登录' : '注册账号'"></h2>
+
+        <template x-if="authMode === 'register'">
+          <div>
+            <label class="block text-sm font-medium mb-1">邮箱</label>
+            <input x-model="authForm.email" type="email" placeholder="your@email.com"
+              class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 mb-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+          </div>
+        </template>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">用户名</label>
+          <input x-model="authForm.username" type="text" placeholder="用户名"
+            class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 mb-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">密码</label>
+          <input x-model="authForm.password" type="password" placeholder="密码"
+            class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 mb-4 text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+            @keyup.enter="authMode === 'login' ? login() : register()" />
+        </div>
+
+        <p x-show="authError" x-text="authError" class="text-red-500 text-sm mb-3"></p>
+
+        <button @click="authMode === 'login' ? login() : register()"
+          :disabled="authLoading"
+          class="w-full py-2.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg font-medium text-sm transition-colors">
+          <span x-text="authLoading ? '处理中...' : (authMode === 'login' ? '登录' : '注册')"></span>
+        </button>
+
+        <p class="text-center text-sm text-gray-500 mt-4">
+          <span x-text="authMode === 'login' ? '没有账号？' : '已有账号？'"></span>
+          <button @click="authMode = authMode === 'login' ? 'register' : 'login'; authError = ''"
+            class="text-brand-500 hover:underline ml-1"
+            x-text="authMode === 'login' ? '注册' : '返回登录'">
+          </button>
+        </p>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div x-show="token && currentTab === 'dashboard'" x-cloak>
+      <h2 class="text-xl font-bold mb-6">数据概览</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <template x-for="stat in dashboardStats" :key="stat.label">
+          <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
+            <div class="text-2xl font-bold" :class="stat.color" x-text="stat.value"></div>
+            <div class="text-sm text-gray-500 dark:text-gray-400 mt-1" x-text="stat.label"></div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 最近任务 -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+        <h3 class="font-semibold mb-4">最近评测任务</h3>
+        <div x-show="tasks.length === 0" class="text-gray-400 text-sm py-4 text-center">暂无任务，去「新建任务」开始吧</div>
+        <div class="space-y-3">
+          <template x-for="t in tasks.slice(0, 5)" :key="t.id">
+            <div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+              @click="viewTask(t.id)">
+              <div class="flex-1 min-w-0 mr-3">
+                <div class="font-medium text-sm truncate" x-text="t.name"></div>
+                <div class="text-xs text-gray-400 mt-0.5" x-text="formatDate(t.created_at)"></div>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span :class="statusBadgeClass(t.status)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="statusLabel(t.status)"></span>
+                <span x-show="t.status === 'running'" class="text-xs text-gray-400" x-text="`${t.progress}%`"></span>
+                <button @click.stop="confirmDeleteTask(t)" title="删除" class="text-gray-300 hover:text-red-500">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- 任务管理 -->
+    <div x-show="token && currentTab === 'tasks'" x-cloak>
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">评测任务</h2>
+        <button @click="showNewTaskModal = true"
+          class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium transition-colors">
+          + 新建任务
+        </button>
+      </div>
+
+      <!-- 任务列表 -->
+      <div class="space-y-3">
+        <template x-for="t in tasks" :key="t.id">
+          <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow cursor-pointer"
+            @click="viewTask(t.id)">
+            <div class="flex items-start justify-between">
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold" x-text="t.name"></div>
+                <div class="text-sm text-gray-400 mt-1" x-text="formatDate(t.created_at)"></div>
+              </div>
+              <div class="flex items-center gap-2 ml-2 shrink-0">
+                <span :class="statusBadgeClass(t.status)" class="text-xs px-2 py-1 rounded-full font-medium" x-text="statusLabel(t.status)"></span>
+                <button @click.stop="confirmDeleteTask(t)" title="删除任务"
+                  class="text-gray-300 hover:text-red-500 transition-colors p-1">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+              </div>
+            </div>
+            <!-- 进度条 -->
+            <div x-show="t.status === 'running' || t.status === 'done'" class="mt-3">
+              <div class="flex justify-between text-xs text-gray-400 mb-1">
+                <span x-text="`${t.done_sessions}/${t.total_sessions} 条会话`"></span>
+                <span x-text="`${t.progress}%`"></span>
+              </div>
+              <div class="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div class="h-full bg-brand-500 rounded-full transition-all duration-300"
+                  :style="`width: ${t.progress}%`"></div>
+              </div>
+            </div>
+            <!-- 失败信息 -->
+            <div x-show="t.status === 'failed'" class="mt-2 text-xs text-red-500" x-text="t.error_msg?.substring(0, 80) || '未知错误'"></div>
+          </div>
+        </template>
+        <div x-show="tasks.length === 0" class="text-center text-gray-400 py-16">
+          <div class="text-4xl mb-3">📋</div>
+          <div class="text-sm">还没有任何任务</div>
+          <button @click="showNewTaskModal = true" class="mt-3 text-brand-500 hover:underline text-sm">创建第一个任务</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 人工审核队列 -->
+    <div x-show="token && currentTab === 'review'" x-cloak>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">人工审核队列</h2>
+        <div class="flex items-center gap-3" x-show="reviewSessions.length > 0">
+          <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer select-none">
+            <input type="checkbox" @change="toggleSelectAllSessions($event.target.checked)" class="rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+            全选
+          </label>
+          <button @click="deleteSelectedSessions()"
+            x-show="selectedSessionIds.size > 0"
+            class="text-xs px-3 py-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-colors">
+            删除所选 (<span x-text="selectedSessionIds.size"></span>)
+          </button>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <template x-for="s in reviewSessions" :key="s.id">
+          <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow flex items-start gap-3">
+            <input type="checkbox"
+              :checked="selectedSessionIds.has(s.id)"
+              @click.stop="toggleSessionSelect(s.id)"
+              class="mt-1 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+            <div class="flex-1 cursor-pointer" @click="viewSessionDetail(s.id, true)">
+              <div class="flex items-start justify-between mb-2">
+                <div>
+                  <span class="font-medium text-sm" x-text="s.session_id"></span>
+                  <span class="ml-2 text-xs text-gray-400" x-text="s.persona"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span :class="`grade-${s.grade}`" x-text="`${s.grade} ${s.final_score.toFixed(1)}分`"></span>
+                  <span class="review-badge">待审核</span>
+                </div>
+              </div>
+              <p class="text-sm text-orange-600 dark:text-orange-400" x-text="s.review_reason"></p>
+            </div>
+            <button @click.stop="viewTaskReport(s._task_id)"
+              x-show="s._task_id"
+              class="shrink-0 text-xs px-2 py-1 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded transition-colors"
+              title="查看该任务审查报告">报告</button>
+          </div>
+        </template>
+        <div x-show="reviewSessions.length === 0" class="text-center text-gray-400 py-16">
+          <div class="text-4xl mb-3">✅</div>
+          <div class="text-sm">暂无需要人工审核的会话</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 系统配置 -->
+    <div x-show="token && currentTab === 'config'" x-cloak>
+      <h2 class="text-xl font-bold mb-6">系统配置</h2>
+      <div class="max-w-lg bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
+        <h3 class="font-semibold mb-4 text-sm text-gray-500 uppercase tracking-wide">LLM 默认配置</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">API Key</label>
+            <input x-model="config.apiKey" type="password" placeholder="sk-..."
+              class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Base URL</label>
+            <input x-model="config.baseUrl" type="text"
+              class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">模型</label>
+            <input x-model="config.model" type="text" placeholder="deepseek-v4-flash"
+              class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+          </div>
+          <div class="flex gap-2">
+            <button @click="saveConfig()"
+              class="flex-1 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium transition-colors">
+              保存配置
+            </button>
+            <button @click="testApiKey()"
+              class="flex-1 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-medium transition-colors">
+              测试连接
+            </button>
+          </div>
+          <p x-show="configSaved" class="text-green-500 text-sm text-center">✓ 已保存（本地存储）</p>
+          <!-- API 测试结果 -->
+          <div x-show="apiTestResult" class="rounded-lg p-3 text-sm"
+            :class="apiTestResult?.ok ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'">
+            <div class="flex items-center gap-2 mb-1">
+              <span x-text="apiTestResult?.ok ? '✅ 连接成功' : '❌ 连接失败'"></span>
+              <span x-show="apiTestResult?.latency_ms" class="text-xs opacity-70" x-text="`(${apiTestResult.latency_ms}ms)`"></span>
+            </div>
+            <div x-show="apiTestResult?.reply" class="text-xs opacity-80 truncate" x-text="apiTestResult.reply"></div>
+            <div x-show="apiTestResult?.error" class="text-xs opacity-80 break-words" x-text="apiTestResult.error"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 管理后台（仅管理员可见）── -->
+    <div x-show="token && currentTab === 'admin' && currentUser && currentUser.is_admin" x-cloak
+         x-init="currentTab === 'admin' && loadAdminData()">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">管理后台</h2>
+        <button @click="loadAdminData()" class="text-xs text-gray-400 hover:text-brand-500 flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          刷新
+        </button>
+      </div>
+
+      <!-- 全局统计卡片 -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+          <p class="text-xs text-gray-500 mb-1">总用户数</p>
+          <p class="text-2xl font-bold text-brand-500" x-text="adminStats.total_users ?? '--'"></p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+          <p class="text-xs text-gray-500 mb-1">总任务数</p>
+          <p class="text-2xl font-bold text-blue-500" x-text="adminStats.total_tasks ?? '--'"></p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+          <p class="text-xs text-gray-500 mb-1">总会话数</p>
+          <p class="text-2xl font-bold text-green-500" x-text="adminStats.total_sessions ?? '--'"></p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+          <p class="text-xs text-gray-500 mb-1">近7天活跃用户</p>
+          <p class="text-2xl font-bold text-purple-500" x-text="adminStats.active_users_7d ?? '--'"></p>
+        </div>
+      </div>
+
+      <!-- 近7天任务量趋势 -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5 mb-6">
+        <h3 class="font-semibold text-sm mb-4">近7天任务量趋势</h3>
+        <div x-show="adminStats.daily_tasks && adminStats.daily_tasks.length" class="flex items-end gap-2 h-20">
+          <template x-for="day in (adminStats.daily_tasks || [])" :key="day.date">
+            <div class="flex-1 flex flex-col items-center gap-1">
+              <div class="w-full bg-brand-400 rounded-t transition-all"
+                   :style="`height: ${adminMaxDay > 0 ? Math.max(4, (day.count / adminMaxDay) * 64) : 4}px`"></div>
+              <span class="text-xs text-gray-400" x-text="day.date"></span>
+            </div>
+          </template>
+        </div>
+        <p x-show="!adminStats.daily_tasks || !adminStats.daily_tasks.length" class="text-sm text-gray-400">暂无数据</p>
+      </div>
+
+      <!-- 用户列表 -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5 mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-sm">用户列表</h3>
+          <input x-model="adminUserSearch" @input.debounce.400ms="loadAdminUsers()"
+                 type="text" placeholder="搜索用户名/邮箱..."
+                 class="text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none w-40"/>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="border-b border-gray-100 dark:border-gray-700 text-xs text-gray-400">
+              <th class="text-left py-2 pr-3">用户名</th>
+              <th class="text-left py-2 pr-3">邮箱</th>
+              <th class="text-center py-2 pr-3">任务数</th>
+              <th class="text-left py-2 pr-3">最近活跃</th>
+              <th class="text-center py-2 pr-3">状态</th>
+              <th class="text-center py-2">操作</th>
+            </tr></thead>
+            <tbody>
+              <template x-for="u in adminUsers" :key="u.id">
+                <tr class="border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                  <td class="py-2 pr-3 font-medium">
+                    <span x-text="u.username"></span>
+                    <span x-show="u.is_admin" class="ml-1 text-xs text-brand-500">[管理员]</span>
+                  </td>
+                  <td class="py-2 pr-3 text-gray-500 text-xs" x-text="u.email"></td>
+                  <td class="py-2 pr-3 text-center" x-text="u.task_count"></td>
+                  <td class="py-2 pr-3 text-gray-400 text-xs" x-text="u.last_active ? new Date(u.last_active).toLocaleDateString() : '无'"></td>
+                  <td class="py-2 pr-3 text-center">
+                    <span :class="u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'"
+                          class="text-xs px-1.5 py-0.5 rounded-full" x-text="u.is_active ? '正常' : '封禁'"></span>
+                  </td>
+                  <td class="py-2 text-center">
+                    <button x-show="!u.is_admin"
+                            @click="toggleUserActive(u)"
+                            :class="u.is_active ? 'text-red-400 hover:text-red-600' : 'text-green-500 hover:text-green-700'"
+                            class="text-xs transition-colors"
+                            x-text="u.is_active ? '封禁' : '解封'"></button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="adminUsers.length === 0">
+                <td colspan="6" class="py-8 text-center text-gray-400 text-sm">暂无用户数据</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 全部任务列表 -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-sm">全部任务</h3>
+          <div class="flex items-center gap-3" x-show="adminTasks.length > 0">
+            <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer select-none">
+              <input type="checkbox" @change="toggleAdminSelectAll($event.target.checked)" class="rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+              全选
+            </label>
+            <button @click="adminBatchDeleteTasks()"
+              x-show="adminSelectedTaskIds.size > 0"
+              class="text-xs px-3 py-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-colors">
+              删除所选 (<span x-text="adminSelectedTaskIds.size"></span>)
+            </button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="border-b border-gray-100 dark:border-gray-700 text-xs text-gray-400">
+              <th class="w-8 py-2"></th>
+              <th class="text-left py-2 pr-3">任务名</th>
+              <th class="text-left py-2 pr-3">提交者</th>
+              <th class="text-center py-2 pr-3">状态</th>
+              <th class="text-center py-2 pr-3">会话数</th>
+              <th class="text-center py-2 pr-3">平均分</th>
+              <th class="text-left py-2">创建时间</th>
+            </tr></thead>
+            <tbody>
+              <template x-for="t in adminTasks" :key="t.id">
+                <tr class="border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                  <td class="py-2">
+                    <input type="checkbox"
+                      :checked="adminSelectedTaskIds.has(t.id)"
+                      @click="toggleAdminTaskSelect(t.id)"
+                      class="rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+                  </td>
+                  <td class="py-2 pr-3 font-medium" x-text="t.name"></td>
+                  <td class="py-2 pr-3 text-gray-500" x-text="t.owner"></td>
+                  <td class="py-2 pr-3 text-center">
+                    <span :class="{
+                      'bg-yellow-100 text-yellow-700': t.status === 'pending',
+                      'bg-blue-100 text-blue-700': t.status === 'running',
+                      'bg-green-100 text-green-700': t.status === 'done',
+                      'bg-red-100 text-red-600': t.status === 'failed',
+                    }" class="text-xs px-1.5 py-0.5 rounded-full" x-text="statusLabel(t.status)"></span>
+                  </td>
+                  <td class="py-2 pr-3 text-center" x-text="t.session_count"></td>
+                  <td class="py-2 pr-3 text-center" x-text="t.avg_score ?? '--'"></td>
+                  <td class="py-2 text-gray-400 text-xs" x-text="t.created_at ? new Date(t.created_at).toLocaleString() : ''"></td>
+                </tr>
+              </template>
+              <tr x-show="adminTasks.length === 0">
+                <td colspan="7" class="py-8 text-center text-gray-400 text-sm">暂无任务数据</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── 新建任务弹窗 ── -->
+  <div x-show="showNewTaskModal" x-cloak
+    class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+    @click.self="showNewTaskModal = false">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+      <h3 class="text-lg font-bold mb-4">新建评测任务</h3>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">任务名称 <span class="text-red-400">*</span></label>
+          <input x-model="newTask.name" type="text" placeholder="例：DeepSeek外呼测试-第1批"
+            class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">API Key <span class="text-red-400">*</span></label>
+          <input x-model="newTask.apiKey" type="password" placeholder="sk-..."
+            class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Base URL</label>
+          <input x-model="newTask.baseUrl" type="text"
+            class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">模型</label>
+          <input x-model="newTask.model" type="text"
+            class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <!-- 指令输入区：多模式 -->
+        <div>
+          <label class="block text-sm font-medium mb-2">指令内容</label>
+
+          <!-- 模式切换 Tab -->
+          <div class="flex gap-1 mb-3 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
+            <template x-for="m in [{key:'json',label:'JSON'},{key:'text',label:'纯文本'},{key:'file',label:'上传文件'}]" :key="m.key">
+              <button
+                @click="newTask.inputMode = m.key; newTask.fileInfo = null"
+                :class="newTask.inputMode === m.key
+                  ? 'bg-white dark:bg-gray-600 shadow text-brand-500 font-medium'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'"
+                class="flex-1 py-1.5 text-xs rounded-md transition-all"
+                x-text="m.label">
+              </button>
+            </template>
+          </div>
+
+          <!-- JSON 粘贴 -->
+          <div x-show="newTask.inputMode === 'json'">
+            <p class="text-xs text-gray-400 mb-1">格式：<code>[{"id":1,"instruction":"# Role\n..."}]</code></p>
+            <textarea x-model="newTask.instructionsRaw" rows="5"
+              placeholder='[{"id":1,"instruction":"# Role\n# Task\n..."}]'
+              class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-mono outline-none focus:ring-2 focus:ring-brand-500 resize-y"></textarea>
+          </div>
+
+          <!-- 纯文本输入 -->
+          <div x-show="newTask.inputMode === 'text'">
+            <p class="text-xs text-gray-400 mb-1">每条指令用 <code>---</code> 分隔，系统自动按序编号</p>
+            <textarea x-model="newTask.instructionsText" rows="8"
+              placeholder="# Role&#10;你是一个外呼客服助手...&#10;&#10;# Task&#10;向用户推荐优惠套餐...&#10;&#10;---&#10;&#10;# Role&#10;第二条指令...&#10;&#10;# Task&#10;..."
+              class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-brand-500 resize-y"></textarea>
+          </div>
+
+          <!-- 文件上传（Excel / TXT / JSON文件） -->
+          <div x-show="newTask.inputMode === 'file'">
+            <p class="text-xs text-gray-400 mb-2">支持 <strong>.xlsx</strong>（第一列为指令）、<strong>.txt</strong>（用---分隔）、<strong>.json</strong> 文件</p>
+            <label class="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:border-brand-400 transition-colors"
+              @dragover.prevent @drop.prevent="handleFileDrop($event)">
+              <input type="file" class="hidden" accept=".xlsx,.xls,.txt,.json"
+                @change="handleFileSelect($event)" />
+              <template x-if="!newTask.fileInfo">
+                <div class="text-center">
+                  <div class="text-3xl mb-1">📂</div>
+                  <p class="text-sm text-gray-500">点击选择或拖拽文件到这里</p>
+                  <p class="text-xs text-gray-400 mt-0.5">.xlsx / .txt / .json</p>
+                </div>
+              </template>
+              <template x-if="newTask.fileInfo">
+                <div class="text-center">
+                  <div class="text-3xl mb-1">✅</div>
+                  <p class="text-sm text-gray-700 dark:text-gray-300 font-medium" x-text="newTask.fileInfo.name"></p>
+                  <p class="text-xs text-gray-400" x-text="newTask.fileInfo.count + ' 条指令已解析'"></p>
+                </div>
+              </template>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <p x-show="newTaskError" x-text="newTaskError" class="text-red-500 text-sm mt-3"></p>
+
+      <div class="flex gap-3 mt-6">
+        <button @click="showNewTaskModal = false"
+          class="flex-1 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+          取消
+        </button>
+        <button @click="submitNewTask()" :disabled="newTaskLoading"
+          class="flex-1 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors">
+          <span x-text="newTaskLoading ? '提交中...' : '开始评测'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 会话详情弹窗 ── -->
+  <div x-show="selectedSession" x-cloak
+    class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+    @click.self="closeSessionModal()">
+    <div x-show="selectedSession" class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="font-bold text-lg" x-text="selectedSession?.session_id"></h3>
+          <div class="text-sm text-gray-400 mt-0.5">
+            <span x-text="selectedSession?.persona"></span>
+            <span class="mx-1">·</span>
+            <span :class="`grade-${selectedSession?.grade}`" x-text="`${selectedSession?.grade} 级 · ${selectedSession?.final_score?.toFixed(1)} 分`"></span>
+          </div>
+        </div>
+        <button @click="closeSessionModal()" class="text-gray-400 hover:text-gray-600 text-xl">×</button>
+      </div>
+
+      <!-- 维度得分（兼容新旧字段名）-->
+      <div x-show="sessionDims() && Object.keys(sessionDims()).length > 0" class="mb-4">
+        <h4 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">维度评分</h4>
+        <div class="space-y-3">
+          <template x-for="(score, key) in sessionDims()" :key="key">
+            <div>
+              <div class="flex items-center gap-3">
+                <div class="text-xs text-gray-500 w-24 shrink-0" x-text="dimLabel(key)"></div>
+                <div class="flex-1 h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full transition-all"
+                    :class="score >= 80 ? 'bg-green-500' : score >= 60 ? 'bg-yellow-400' : 'bg-red-400'"
+                    :style="`width: ${score}%`"></div>
+                </div>
+                <div class="text-xs font-medium w-12 text-right" x-text="`${score?.toFixed(0)}分`"></div>
+              </div>
+              <!-- 打分依据 -->
+              <div x-show="sessionDimReason(key)" class="text-xs text-gray-400 mt-1 ml-[108px] leading-relaxed" x-text="'▸ ' + sessionDimReason(key)"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- 对话回放（兼容新旧字段名 dialog / turn_analyses）-->
+      <div x-show="sessionDialog()?.length > 0">
+        <h4 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">对话回放</h4>
+        <div class="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <template x-for="(t, idx) in sessionDialog()" :key="idx">
+            <div :class="t.role === 'agent'
+              ? 'bg-blue-50 dark:bg-blue-900/30 ml-4'
+              : 'bg-gray-50 dark:bg-gray-700/50 mr-4'"
+              class="rounded-lg p-3 text-sm">
+              <div class="font-medium text-xs text-gray-400 mb-1" x-text="`第${idx + 1}轮 · ${t.role === 'agent' ? 'Agent' : '用户'}`"></div>
+              <div x-text="t.content"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- 建议（兼容新旧字段名 suggestions / recommendations）-->
+      <div x-show="sessionSuggestions()?.length > 0" class="mt-4">
+        <h4 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">改进建议</h4>
+        <ul class="space-y-1">
+          <template x-for="rec in sessionSuggestions()" :key="rec">
+            <li class="text-sm text-orange-600 dark:text-orange-400 flex gap-2">
+              <span>→</span><span x-text="rec"></span>
+            </li>
+          </template>
+        </ul>
+      </div>
+
+      <!-- 人工审核操作区（仅从审核页打开时显示）-->
+      <div x-show="selectedSessionFromReview && selectedSession?.review_status === 'pending'" class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <h4 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">人工审核</h4>
+
+        <!-- 审核备注 -->
+        <div class="mb-3">
+          <textarea x-model="reviewComment" rows="2" placeholder="审核备注（可选）"
+            class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 outline-none resize-none"></textarea>
+        </div>
+
+        <!-- 改分区域（展开时显示） -->
+        <div x-show="showScoreOverride" class="mb-3 p-3 bg-orange-50 dark:bg-orange-900/30 rounded-lg">
+          <p class="text-xs text-gray-500 mb-2">输入要修改的维度分数（留空=不改）：</p>
+          <div class="grid grid-cols-2 gap-2">
+            <template x-for="dim in ['task_completion','communication','compliance','efficiency','user_experience']" :key="dim">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-400 w-20" x-text="dimLabel(dim)"></span>
+                <input type="number" min="0" max="100" step="1"
+                  :placeholder="sessionDims()?.[dim]?.toFixed(0) || ''"
+                  @input="scoreOverrides[dim] = parseFloat($event.target.value) || undefined"
+                  class="w-16 px-2 py-1 rounded border border-orange-300 text-sm text-right focus:ring-1 focus:ring-brand-500 outline-none" />
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="flex gap-2">
+          <button @click="submitReview('approve')"
+            :disabled="reviewSubmitting"
+            class="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+            ✓ 审核通过
+          </button>
+          <button @click="submitReview('reject')"
+            :disabled="reviewSubmitting"
+            class="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+            ✗ 审核驳回
+          </button>
+          <button @click="showScoreOverride = !showScoreOverride"
+            class="px-3 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm transition-colors">
+            ✎ 改分
+          </button>
+        </div>
+
+        <!-- 提交后确认 -->
+        <div x-show="reviewSubmitting" class="mt-2 text-center text-xs text-gray-400">提交中...</div>
+      </div>
+
+      <!-- 已审核标记 -->
+      <div x-show="selectedSession?.review_status && selectedSession?.review_status !== 'pending'" class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <div class="flex items-center gap-2">
+          <span :class="selectedSession?.review_status === 'approved' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'"
+            class="text-xs px-2 py-1 rounded-full font-medium">
+            {{ selectedSession?.review_status === 'approved' ? '✓ 已通过' : '✗ 已驳回' }}
+          </span>
+          <span class="text-xs text-gray-400" x-text="'审核人：' + (selectedSession?.review_by || '系统')"></span>
+        </div>
+        <p x-show="selectedSession?.review_comment" class="text-xs text-gray-500 mt-1" x-text="selectedSession?.review_comment"></p>
+      </div>
+
+      <!-- 空状态提示 -->
+      <div x-show="!sessionDims() && !sessionDialog()?.length" class="text-center text-gray-400 py-8">
+        <p class="text-sm">暂无详细评测数据</p>
+        <p class="text-xs mt-1">请确保任务已完成评测</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 任务详情页（全屏覆盖） ── -->
+  <div x-show="currentTaskId" x-cloak class="fixed left-0 right-0 bottom-0 top-14 bg-gray-50 dark:bg-gray-900 z-20 overflow-y-auto">
+    <div class="max-w-7xl mx-auto px-4 py-6">
+      <div class="flex items-center gap-3 mb-6">
+        <button @click="closeTaskDetail()" class="text-gray-400 hover:text-gray-600">
+          ← 返回
+        </button>
+        <h2 class="text-xl font-bold" x-text="currentTask?.name"></h2>
+        <span :class="statusBadgeClass(currentTask?.status)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="statusLabel(currentTask?.status)"></span>
+      </div>
+
+      <!-- 实时进度 -->
+      <div x-show="currentTask?.status === 'running'" class="bg-white dark:bg-gray-800 rounded-xl p-4 mb-6 shadow-sm">
+        <div class="flex justify-between text-sm mb-2">
+          <span class="font-medium">评测进行中...</span>
+          <span x-text="`${currentTask?.done_sessions}/${currentTask?.total_sessions} 条`"></span>
+        </div>
+        <div class="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div class="h-full bg-brand-500 rounded-full transition-all duration-300"
+            :style="`width: ${currentTask?.progress}%`"></div>
+        </div>
+        <div class="mt-2 text-xs text-gray-400">实时日志：
+          <span x-text="wsLog"></span>
+        </div>
+      </div>
+
+      <!-- 报告摘要 -->
+      <div x-show="taskReport" class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+        <template x-for="stat in reportStats()" :key="stat.label">
+          <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm text-center">
+            <div class="text-xl font-bold" :class="stat.color" x-text="stat.value"></div>
+            <div class="text-xs text-gray-400 mt-0.5" x-text="stat.label"></div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 维度平均分 -->
+      <div x-show="taskReport?.dimension_avg && Object.keys(taskReport.dimension_avg).length > 0" class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6">
+        <h4 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">各维度平均分</h4>
+        <div class="space-y-2">
+          <template x-for="(avg, dim) in taskReport.dimension_avg" :key="dim">
+            <div class="flex items-center gap-3">
+              <div class="text-xs text-gray-500 w-24 shrink-0" x-text="dimLabel(dim)"></div>
+              <div class="flex-1 h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div class="h-full rounded-full transition-all"
+                  :class="avg >= 80 ? 'bg-green-500' : avg >= 60 ? 'bg-yellow-400' : 'bg-red-400'"
+                  :style="`width: ${avg}%`"></div>
+              </div>
+              <div class="text-xs font-medium w-12 text-right" x-text="`${avg.toFixed(0)}分`"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- 会话结果列表 -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold">会话列表 (<span x-text="taskSessions.length"></span>)</h3>
+          <label class="flex items-center gap-1.5 text-sm text-gray-500 cursor-pointer">
+            <input type="checkbox" x-model="reviewOnly" @change="loadTaskSessions()" class="rounded" />
+            仅显示待审核
+          </label>
+        </div>
+        <div class="space-y-2">
+          <template x-for="s in taskSessions" :key="s.id">
+            <div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+              @click="viewSessionDetail(s.id)">
+              <div class="flex-1 min-w-0">
+                <span class="text-sm font-medium" x-text="s.session_id"></span>
+                <span class="text-xs text-gray-400 ml-2" x-text="s.persona"></span>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span x-show="s.review_flag" class="review-badge">待审</span>
+                <span :class="`grade-${s.grade}`" x-text="`${s.grade} · ${s.final_score.toFixed(1)}`"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="taskSessions.length === 0 && currentTask?.status === 'done'" class="text-gray-400 text-sm text-center py-4">暂无结果</div>
+          <div x-show="currentTask?.status === 'pending' || currentTask?.status === 'running'" class="text-gray-400 text-sm text-center py-4">评测进行中，完成后自动刷新...</div>
+          <div x-show="currentTask?.status === 'failed'" class="text-red-500 text-sm text-center py-4">
+            ✗ 任务失败: <span x-text="currentTask?.error_msg || '未知错误'"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 自动检测 API 地址：同源优先，否则用 localhost:8088
+    const API_BASE = (() => {
+      const origin = window.location.origin;
+      // 如果当前协议是 http/https 且非 localhost 标准端口，使用同源
+      if (origin.startsWith('http') && !origin.startsWith('file')) {
+        return origin + '/api';
+      }
+      // file:// 或未知协议，回退到 localhost:8088
+      return 'http://localhost:8088/api';
+    })();
+
+    function app() {
+      return {
+        // ── 状态 ──
+        darkMode: localStorage.getItem('darkMode') === 'true',
+        token: localStorage.getItem('token') || null,
+        currentUser: null,
+        currentTab: 'dashboard',
+
+        // 认证
+        authMode: 'login',
+        authForm: { username: '', email: '', password: '' },
+        authError: '',
+        authLoading: false,
+
+        // 数据
+        tasks: [],
+        reviewSessions: [],
+        selectedSessionIds: new Set(),  // 审核页批量选择
+        dashboardStats: [],
+
+        // 管理后台数据（仅管理员可见）
+        adminStats: {},
+        adminUsers: [],
+        adminTasks: [],
+        adminUserSearch: '',
+        adminSelectedTaskIds: new Set(),  // 管理后台任务勾选
+        get adminMaxDay() {
+          const days = this.adminStats.daily_tasks || [];
+          return Math.max(1, ...days.map(d => d.count));
+        },
+
+        // 新建任务
+        showNewTaskModal: false,
+        newTask: {
+          name: '', apiKey: '', baseUrl: 'https://gpt-agent.cc/v1', model: 'deepseek-v4-flash',
+          inputMode: 'json',          // 'json' | 'text' | 'file'
+          instructionsRaw: '',        // JSON 粘贴
+          instructionsText: '',       // 纯文本
+          parsedInstructions: null,   // 文件上传后解析结果
+          fileInfo: null,             // {name, count}
+        },
+        newTaskError: '',
+        newTaskLoading: false,
+
+        // 任务详情
+        currentTaskId: null,
+        currentTask: null,
+        taskSessions: [],
+        taskReport: null,
+        reviewOnly: false,
+        wsLog: '',
+        wsConn: null,
+
+        // 会话详情
+        selectedSession: null,
+        selectedSessionFromReview: false,  // 是否从审核页打开的弹窗
+
+        // 人工审核
+        reviewComment: '',
+        showScoreOverride: false,
+        scoreOverrides: {},
+        reviewSubmitting: false,
+
+        // 配置
+        config: { apiKey: '', baseUrl: 'https://gpt-agent.cc/v1', model: 'deepseek-v4-flash' },
+        configSaved: false,
+        apiTestResult: null,  // {ok, latency_ms, reply, error}
+
+        // ── 自动刷新（任务运行时每2秒拉最新状态）
+        _pollTimer: null,
+
+        // ── 初始化 ──
+        async init() {
+          // 如果已有 token，拉取用户信息（含 LLM 配置）
+          if (this.token) {
+            try {
+              const res = await this.apiFetch('/auth/me');
+              if (res.ok) {
+                this.currentUser = await res.json();
+                this._applyUserConfig(this.currentUser);
+              } else {
+                // token 失效，清掉
+                this.token = null;
+                localStorage.removeItem('token');
+              }
+            } catch (e) {}
+          }
+
+          if (this.token) await this.loadDashboard();
+
+          // 监听暗色模式变化
+          this.$watch('darkMode', val => localStorage.setItem('darkMode', val));
+
+          // 监听：切到 tasks tab 且有运行中任务时开始轮询
+          this.$watch('currentTab', val => this._maybePoll());
+        },
+
+        // 把 user 对象里的 LLM 配置同步到本地 config 和 newTask
+        _applyUserConfig(user) {
+          if (user.llm_api_key)  this.config.apiKey  = user.llm_api_key;
+          if (user.llm_base_url) this.config.baseUrl = user.llm_base_url;
+          if (user.llm_model)    this.config.model   = user.llm_model;
+          this.newTask.apiKey  = this.config.apiKey;
+          this.newTask.baseUrl = this.config.baseUrl;
+          this.newTask.model   = this.config.model;
+        },
+
+        async loadDashboard() {
+          await this.loadTasks();
+          await this.loadReviewSessions();
+          this.buildDashboardStats();
+          // 管理员登录后自动预加载后台数据
+          if (this.currentUser && this.currentUser.is_admin) {
+            this.loadAdminData();
+          }
+        },
+
+        async loadTasks() {
+          try {
+            const res = await this.apiFetch('/tasks');
+            if (res.ok) this.tasks = await res.json();
+          } catch (e) {}
+          this._maybePoll();
+        },
+
+        confirmDeleteTask(task) {
+          if (confirm(`确定删除任务「${task.name}」吗？\n将同时删除所有关联的会话记录，不可恢复。`)) {
+            this.deleteTask(task.id);
+          }
+        },
+
+        async deleteTask(taskId) {
+          try {
+            const res = await this.apiFetch(`/tasks/${taskId}`, { method: 'DELETE' });
+            if (res.ok) {
+              this.tasks = this.tasks.filter(t => t.id !== taskId);
+              if (this.currentTaskId === taskId) {
+                this.currentTaskId = null;
+                this._stopDetailPolling();
+              }
+            }
+          } catch (e) {}
+        },
+
+        _maybePoll() {
+          // 只在 tasks tab 且有运行中任务时轮询；否则停掉
+          const hasRunning = this.tasks.some(t => t.status === 'running' || t.status === 'pending');
+          if (this.currentTab === 'tasks' && hasRunning) {
+            if (!this._pollTimer) {
+              this._pollTimer = setInterval(() => this.loadTasks(), 2000);
+            }
+          } else {
+            this._stopPolling();
+          }
+        },
+
+        _stopPolling() {
+          if (this._pollTimer) {
+            clearInterval(this._pollTimer);
+            this._pollTimer = null;
+          }
+        },
+
+        async loadReviewSessions() {
+          // 收集所有任务的待审核会话
+          const all = [];
+          for (const t of this.tasks.filter(t => t.status === 'done')) {
+            try {
+              const res = await this.apiFetch(`/tasks/${t.id}/sessions?review_only=true`);
+              if (res.ok) {
+                const sessions = await res.json();
+                // 给每条 session 附加所属 task_id，方便跳转报告
+                sessions.forEach(s => s._task_id = t.id);
+                all.push(...sessions);
+              }
+            } catch (e) {}
+          }
+          this.reviewSessions = all;
+          this.selectedSessionIds.clear();  // 刷新后清空勾选
+        },
+
+        toggleSelectAllSessions(checked) {
+          this.selectedSessionIds.clear();
+          if (checked) this.reviewSessions.forEach(s => this.selectedSessionIds.add(s.id));
+        },
+
+        toggleSessionSelect(id) {
+          if (this.selectedSessionIds.has(id)) this.selectedSessionIds.delete(id);
+          else this.selectedSessionIds.add(id);
+        },
+
+        async deleteSelectedSessions() {
+          if (this.selectedSessionIds.size === 0) return;
+          if (!confirm(`确定要删除 ${this.selectedSessionIds.size} 条会话吗？此操作不可撤销。`)) return;
+          const ids = Array.from(this.selectedSessionIds);
+          try {
+            const res = await this.apiFetch('/tasks/sessions/batch-delete', {
+              method: 'POST',
+              body: JSON.stringify({ ids }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+              const deleted = data.deleted || 0;
+              this.selectedSessionIds.clear();
+              if (deleted === 0) {
+                alert('删除数为 0。可能原因：这些会话不属于您的任务，或已被删除。');
+              } else {
+                alert(`成功删除 ${deleted} 条会话。`);
+              }
+              await this.loadReviewSessions();
+            } else {
+              alert(data.detail || '删除请求失败，请重试');
+            }
+          } catch (e) { alert('网络错误，删除失败'); }
+        },
+
+        buildDashboardStats() {
+          const done = this.tasks.filter(t => t.status === 'done').length;
+          const running = this.tasks.filter(t => t.status === 'running').length;
+          this.dashboardStats = [
+            { label: '总任务数', value: this.tasks.length, color: 'text-gray-800 dark:text-gray-100' },
+            { label: '已完成', value: done, color: 'text-green-600 dark:text-green-400' },
+            { label: '进行中', value: running, color: 'text-blue-600 dark:text-blue-400' },
+            { label: '待审核', value: this.reviewSessions.length, color: 'text-orange-500' },
+          ];
+        },
+
+        // ── 认证 ──
+        async login() {
+          this.authLoading = true; this.authError = '';
+          try {
+            const res = await fetch(`${API_BASE}/auth/login`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: this.authForm.username, password: this.authForm.password }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              // detail 可能是字符串或数组（422校验错误）
+              const detail = data.detail;
+              this.authError = Array.isArray(detail)
+                ? detail.map(e => e.msg || JSON.stringify(e)).join('；')
+                : (typeof detail === 'string' ? detail : '登录失败');
+              return;
+            }
+            this.token = data.access_token;
+            this.currentUser = data.user;
+            this._applyUserConfig(data.user);  // 登录时自动恢复配置
+            localStorage.setItem('token', this.token);
+            await this.loadDashboard();
+          } catch (e) { this.authError = '网络错误，请确认后端已启动'; }
+          finally { this.authLoading = false; }
+        },
+
+        async register() {
+          this.authLoading = true; this.authError = '';
+          try {
+            // 第一步：注册
+            const regRes = await fetch(`${API_BASE}/auth/register`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: this.authForm.username, email: this.authForm.email, password: this.authForm.password }),
+            });
+            const regData = await regRes.json();
+            if (!regRes.ok) {
+              const detail = regData.detail;
+              this.authError = Array.isArray(detail)
+                ? detail.map(e => e.msg || JSON.stringify(e)).join('；')
+                : (typeof detail === 'string' ? detail : '注册失败');
+              return;
+            }
+            // 第二步：注册成功直接登录（不切换 authMode，直接请求）
+            const loginRes = await fetch(`${API_BASE}/auth/login`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: this.authForm.username, password: this.authForm.password }),
+            });
+            const loginData = await loginRes.json();
+            if (!loginRes.ok) {
+              // 注册成功但登录失败，让用户手动登录
+              this.authMode = 'login';
+              this.authError = '注册成功！请登录';
+              return;
+            }
+            this.token = loginData.access_token;
+            this.currentUser = loginData.user;
+            this._applyUserConfig(loginData.user);  // 注册后登录，恢复配置
+            localStorage.setItem('token', this.token);
+            await this.loadDashboard();
+          } catch (e) { this.authError = '网络错误，请确认后端已启动'; }
+          finally { this.authLoading = false; }
+        },
+
+        logout() {
+          this.token = null; localStorage.removeItem('token');
+          this.tasks = []; this.reviewSessions = [];
+          this.currentTaskId = null; this.selectedSession = null;
+        },
+
+        // ── 任务操作 ──
+        async submitNewTask() {
+          if (!this.newTask.name) { this.newTaskError = '请填写任务名称'; return; }
+          if (!this.newTask.apiKey) { this.newTaskError = '请填写 API Key'; return; }
+
+          let instructions = [];
+          const mode = this.newTask.inputMode;
+
+          if (mode === 'json') {
+            if (this.newTask.instructionsRaw.trim()) {
+              try { instructions = JSON.parse(this.newTask.instructionsRaw); }
+              catch (e) { this.newTaskError = '指令 JSON 格式错误，请检查括号和引号'; return; }
+            }
+          } else if (mode === 'text') {
+            const raw = this.newTask.instructionsText.trim();
+            if (raw) {
+              // 用 --- 分隔，每段作为一条指令
+              instructions = raw.split(/\n---\n/).map((seg, i) => ({
+                id: i + 1,
+                instruction: seg.trim(),
+              })).filter(x => x.instruction);
+            }
+          } else if (mode === 'file') {
+            if (!this.newTask.parsedInstructions) {
+              this.newTaskError = '请先上传并解析文件';
+              return;
+            }
+            instructions = this.newTask.parsedInstructions;
+          }
+
+          if (instructions.length === 0) {
+            this.newTaskError = '至少需要填入一条指令';
+            return;
+          }
+
+          this.newTaskLoading = true; this.newTaskError = '';
+          try {
+            const res = await this.apiFetch('/tasks', {
+              method: 'POST',
+              body: JSON.stringify({
+                name: this.newTask.name,
+                llm_api_key: this.newTask.apiKey,
+                llm_base_url: this.newTask.baseUrl,
+                llm_model: this.newTask.model,
+                instructions,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok) { this.newTaskError = data.detail || '创建失败'; return; }
+            this.showNewTaskModal = false;
+            this.currentTab = 'tasks';  // 留在任务列表页查看进度
+            await this.loadTasks();
+            this._maybePoll();  // 立即开始轮询
+            // 重置表单
+            this.newTask = {
+              name: '', apiKey: this.config.apiKey || '', baseUrl: this.config.baseUrl || 'https://gpt-agent.cc/v1',
+              model: this.config.model || 'deepseek-v4-flash',
+              inputMode: 'json', instructionsRaw: '', instructionsText: '',
+              parsedInstructions: null, fileInfo: null,
+            };
+          } catch (e) { this.newTaskError = '网络错误'; }
+          finally { this.newTaskLoading = false; }
+        },
+
+        // ── 文件处理 ──
+        handleFileDrop(e) {
+          const file = e.dataTransfer?.files?.[0];
+          if (file) this._parseUploadFile(file);
+        },
+        handleFileSelect(e) {
+          const file = e.target.files?.[0];
+          if (file) this._parseUploadFile(file);
+        },
+        async _parseUploadFile(file) {
+          const ext = file.name.split('.').pop().toLowerCase();
+          this.newTaskError = '';
+          try {
+            if (ext === 'json') {
+              const text = await file.text();
+              const parsed = JSON.parse(text);
+              const arr = Array.isArray(parsed) ? parsed : [parsed];
+              this.newTask.parsedInstructions = arr.map((x, i) => ({
+                id: x.id ?? i + 1,
+                instruction: x.instruction ?? x.content ?? JSON.stringify(x),
+              }));
+              this.newTask.fileInfo = { name: file.name, count: arr.length };
+            } else if (ext === 'txt') {
+              const text = await file.text();
+              const arr = text.split(/\n---\n/).map((seg, i) => ({
+                id: i + 1,
+                instruction: seg.trim(),
+              })).filter(x => x.instruction);
+              this.newTask.parsedInstructions = arr;
+              this.newTask.fileInfo = { name: file.name, count: arr.length };
+            } else if (ext === 'xlsx' || ext === 'xls') {
+              // Excel 需要上传到后端解析
+              const formData = new FormData();
+              formData.append('file', file);
+              const res = await fetch(`${API_BASE}/tasks/parse-file`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${this.token}` },
+                body: formData,
+              });
+              if (!res.ok) { this.newTaskError = '文件解析失败，请确认格式'; return; }
+              const data = await res.json();
+              this.newTask.parsedInstructions = data.instructions;
+              this.newTask.fileInfo = { name: file.name, count: data.instructions.length };
+            } else {
+              this.newTaskError = '不支持的文件格式，请使用 .xlsx / .txt / .json';
+            }
+          } catch (err) {
+            this.newTaskError = `文件解析错误：${err.message}`;
+          }
+        },
+
+        async viewTask(taskId) {
+          if (!taskId) return;  // 防御 null/undefined
+          this._stopPolling();  // 进入详情页，改用 WebSocket
+          this.currentTaskId = taskId;
+          this.taskSessions = []; this.taskReport = null; this.reviewOnly = false;
+          await this.refreshCurrentTask();
+          await this.loadTaskSessions();
+          if (this.currentTask?.status === 'done') await this.loadTaskReport();
+          this.connectWS(taskId);
+        },
+
+        async refreshCurrentTask() {
+          if (!this.currentTaskId) return;
+          const res = await this.apiFetch(`/tasks/${this.currentTaskId}`);
+          if (res.ok) this.currentTask = await res.json();
+        },
+
+        closeTaskDetail() {
+          this._stopDetailPolling();  // 停掉轮询，防止 null task_id 请求
+          this.currentTaskId = null;
+          this.currentTab = 'tasks';
+          this.loadTasks();
+        },
+
+        async loadTaskSessions() {
+          if (!this.currentTaskId) return;  // 防御 null
+          const url = `/tasks/${this.currentTaskId}/sessions${this.reviewOnly ? '?review_only=true' : ''}`;
+          const res = await this.apiFetch(url);
+          if (res.ok) this.taskSessions = await res.json();
+        },
+
+        async loadTaskReport() {
+          if (!this.currentTaskId) return;  // 防御 null
+          const res = await this.apiFetch(`/tasks/${this.currentTaskId}/report`);
+          if (res.ok) this.taskReport = await res.json();
+        },
+
+        reportStats() {
+          if (!this.taskReport) return [];
+          return [
+            { label: '平均分', value: this.taskReport.overall_avg_score, color: 'text-brand-500' },
+            { label: '最高分', value: this.taskReport.overall_max_score, color: 'text-green-500' },
+            { label: '最低分', value: this.taskReport.overall_min_score, color: 'text-red-500' },
+            { label: '待审核', value: this.taskReport.review_count, color: 'text-orange-500' },
+            { label: '总会话', value: this.taskReport.total_sessions, color: 'text-gray-600 dark:text-gray-300' },
+          ];
+        },
+
+        // 详情页轮询兜底（WebSocket 有时不稳定）
+        _detailTimer: null,
+
+        connectWS(taskId) {
+          if (!taskId) return;  // 防御 null
+          if (this.wsConn) { try { this.wsConn.close(); } catch (e) {} }
+          const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const ws = new WebSocket(`${protocol}//${location.host}/api/tasks/${taskId}/ws`);
+          this.wsConn = ws;
+          ws.onopen = () => {
+            this.wsLog = '已连接，等待评测...';
+            // WebSocket 打开后开 3s 轮询兜底
+            this._startDetailPolling();
+          };
+          ws.onmessage = async (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'progress') {
+              if (this.currentTask) {
+                this.currentTask.progress = msg.progress;
+                this.currentTask.done_sessions = msg.done;
+                this.currentTask.total_sessions = msg.total;
+                this.currentTask.status = 'running';
+              }
+              if (msg.latest) this.wsLog = `${msg.latest.session_id} → ${msg.latest.grade} (${msg.latest.score}分)`;
+            } else if (msg.type === 'done') {
+              this._stopDetailPolling();
+              await this.refreshCurrentTask();
+              await this.loadTaskSessions();
+              await this.loadTaskReport();
+              this.wsLog = '✓ 评测完成';
+            } else if (msg.type === 'error') {
+              this._stopDetailPolling();
+              this.wsLog = `✗ 错误: ${msg.message}`;
+            }
+          };
+          ws.onerror = () => {
+            this.wsLog = 'WebSocket 连接失败，改用轮询获取进度...';
+            this._startDetailPolling();
+          };
+          ws.onclose = () => {
+            // 连接关闭后继续轮询作为兜底
+          };
+        },
+
+        _startDetailPolling() {
+          if (this._detailTimer) return;
+          this._detailTimer = setInterval(async () => {
+            if (!this.currentTaskId) { this._stopDetailPolling(); return; }
+            try {
+              await this.refreshCurrentTask();
+              if (this.currentTask?.status === 'done' || this.currentTask?.status === 'failed') {
+                await this.loadTaskSessions();
+                if (this.currentTask?.status === 'done') await this.loadTaskReport();
+                this._stopDetailPolling();
+                if (this.currentTask?.status === 'failed') {
+                  this.wsLog = `✗ 失败: ${this.currentTask.error_msg || '未知错误'}`;
+                }
+              }
+            } catch (e) {}
+          }, 3000);
+        },
+
+        _stopDetailPolling() {
+          if (this._detailTimer) { clearInterval(this._detailTimer); this._detailTimer = null; }
+        },
+
+        viewSessionDetail(sessionId, fromReview = false) {
+          // 重置审核状态
+          this.selectedSessionFromReview = fromReview;
+          this.reviewComment = '';
+          this.showScoreOverride = false;
+          this.scoreOverrides = {};
+          this.reviewSubmitting = false;
+          // 先从已加载的列表中找（快速响应），同时发请求获取最新完整数据
+          const cached = this.reviewSessions.find(s => s.id === sessionId) ||
+                         this.taskSessions.find(s => s.id === sessionId);
+          if (cached) this.selectedSession = cached;
+          // 异步拉取最新完整数据
+          this.apiFetch(`/tasks/sessions/${sessionId}`).then(res => {
+            if (res.ok) res.json().then(data => { this.selectedSession = data; });
+          }).catch(() => {});
+        },
+        closeSessionModal() {
+          // 确保关闭弹窗后留在正确的标签页
+          const wasFromReview = this.selectedSessionFromReview;
+          // 先记录当前标签页，Alpine 批量更新可能导致漂移
+          const savedTab = this.currentTab;
+          this.selectedSession = null;
+          this.selectedSessionFromReview = false;
+          this.reviewComment = '';
+          this.showScoreOverride = false;
+          this.scoreOverrides = {};
+          if (wasFromReview) {
+            // 用 setTimeout 替代 $nextTick，确保在 Alpine 完成所有 DOM 更新后再修正
+            // $nextTick 在某些 Alpine 版本中触发时机不可靠
+            setTimeout(() => { this.currentTab = 'review'; }, 50);
+          }
+        },
+        viewTaskReport(taskId) {
+          // 跳转到任务详情页查看审查报告
+          if (!taskId) return;
+          this.currentTab = 'tasks';
+          this.viewTask(taskId);
+        },
+
+        // ── 人工审核提交 ──
+        async submitReview(action) {
+          if (!this.selectedSession) return;
+          if (action === 'reject' && !this.reviewComment) {
+            if (!confirm('驳回审核时不填写备注吗？建议填写驳回原因。')) return;
+          }
+          this.reviewSubmitting = true;
+          try {
+            const body = {
+              action,
+              comment: this.reviewComment || undefined,
+            };
+            if (action === 'override' || Object.keys(this.scoreOverrides).length > 0) {
+              body.score_overrides = this.scoreOverrides;
+              body.action = 'override';
+            }
+            const res = await this.apiFetch(`/tasks/sessions/${this.selectedSession.id}/review`, {
+              method: 'POST',
+              body: JSON.stringify(body),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              // 更新本地状态
+              if (this.selectedSession) {
+                this.selectedSession.review_status = data.review_status;
+                this.selectedSession.review_comment = this.reviewComment || body.comment;
+                this.selectedSession.review_by = this.currentUser?.username;
+                this.selectedSession.final_score = data.final_score;
+                this.selectedSession.grade = data.grade;
+              }
+              this.reviewComment = '';
+              this.showScoreOverride = false;
+              this.scoreOverrides = {};
+              // 刷新审核队列
+              await this.loadReviewSessions();
+              // 1秒后自动关闭弹窗
+              setTimeout(() => {
+                this.selectedSession = null;
+                this.selectedSessionFromReview = false;
+              }, 1000);
+            } else {
+              const err = await res.json().catch(() => ({}));
+              alert(err.detail || '审核提交失败');
+            }
+          } catch (e) {
+            alert('网络错误，审核提交失败');
+          } finally {
+            this.reviewSubmitting = false;
+          }
+        },
+
+        // 会话详情弹窗 — 兼容新旧 result_json 字段名
+        sessionDims() {
+          const rj = this.selectedSession?.result_json;
+          if (!rj) return null;
+          // 最新版：{dimensions: {task_completion: {score:80, reason:"..."}, ...}}
+          if (rj.dimensions && typeof rj.dimensions === 'object') {
+            // 检测值的类型：如果是对象（含score/reason），提取score
+            const firstVal = Object.values(rj.dimensions)[0];
+            if (firstVal && typeof firstVal === 'object' && 'score' in firstVal) {
+              const m = {};
+              for (const [k, v] of Object.entries(rj.dimensions)) {
+                m[k] = v.score;
+              }
+              return m;
+            }
+            // 旧版扁平 {dim: score}
+            return rj.dimensions;
+          }
+          // 旧版：{dimension_scores: [{dimension: "x", score: 80}, ...]}
+          if (Array.isArray(rj.dimension_scores)) {
+            const m = {};
+            rj.dimension_scores.forEach(d => { m[d.dimension || d.dim] = d.score; });
+            return m;
+          }
+          return null;
+        },
+        /** 获取单个维度的打分原因（新格式支持） */
+        sessionDimReason(dim) {
+          const rj = this.selectedSession?.result_json;
+          if (!rj?.dimensions) return '';
+          const val = rj.dimensions[dim];
+          if (val && typeof val === 'object' && val.reason) return val.reason;
+          return '';
+        },
+        sessionDialog() {
+          const rj = this.selectedSession?.result_json;
+          if (!rj) return [];
+          return rj.dialog || rj.turn_analyses || [];
+        },
+        sessionSuggestions() {
+          const rj = this.selectedSession?.result_json;
+          if (!rj) return [];
+          return rj.suggestions || rj.recommendations || [];
+        },
+
+        // ── 配置 ──
+        async saveConfig() {
+          this.configSaved = false;
+          try {
+            const res = await this.apiFetch('/auth/config', {
+              method: 'PUT',
+              body: JSON.stringify({
+                llm_api_key:  this.config.apiKey  || null,
+                llm_base_url: this.config.baseUrl || null,
+                llm_model:    this.config.model   || null,
+              }),
+            });
+            if (res.ok) {
+              const updated = await res.json();
+              this.currentUser = updated;
+              this._applyUserConfig(updated);
+              this.configSaved = true;
+              setTimeout(() => this.configSaved = false, 2000);
+            }
+          } catch (e) {
+            alert('保存失败，请确认已登录');
+          }
+        },
+
+        async testApiKey() {
+          this.apiTestResult = null;
+          if (!this.config.apiKey) {
+            this.apiTestResult = { ok: false, error: '请先填写 API Key' };
+            return;
+          }
+          try {
+            const res = await this.apiFetch('/auth/test-llm', {
+              method: 'POST',
+              body: JSON.stringify({
+                api_key:  this.config.apiKey,
+                base_url: this.config.baseUrl || 'https://gpt-agent.cc/v1',
+                model:    this.config.model    || 'deepseek-v4-flash',
+              }),
+            });
+            if (res.ok) {
+              this.apiTestResult = await res.json();
+            } else {
+              const err = await res.json().catch(() => ({}));
+              this.apiTestResult = { ok: false, error: err.detail || '测试请求失败' };
+            }
+          } catch (e) {
+            this.apiTestResult = { ok: false, error: '网络错误，请确认后端已启动' };
+          }
+        },
+
+        // ── 管理后台 ──
+        async loadAdminData() {
+          await Promise.all([this.loadAdminStats(), this.loadAdminUsers(), this.loadAdminTasks()]);
+        },
+        async loadAdminStats() {
+          try {
+            const res = await this.apiFetch('/admin/stats');
+            if (res.ok) this.adminStats = await res.json();
+          } catch (e) {}
+        },
+        async loadAdminUsers() {
+          try {
+            const url = `/admin/users?page=1&page_size=50${this.adminUserSearch ? '&search=' + encodeURIComponent(this.adminUserSearch) : ''}`;
+            const res = await this.apiFetch(url);
+            if (res.ok) { const d = await res.json(); this.adminUsers = d.users; }
+          } catch (e) {}
+        },
+        async loadAdminTasks() {
+          try {
+            const res = await this.apiFetch('/admin/tasks?page=1&page_size=50');
+            if (res.ok) { const d = await res.json(); this.adminTasks = d.tasks; }
+          } catch (e) {}
+          this.adminSelectedTaskIds.clear();
+        },
+        toggleAdminSelectAll(checked) {
+          this.adminSelectedTaskIds.clear();
+          if (checked) this.adminTasks.forEach(t => this.adminSelectedTaskIds.add(t.id));
+        },
+        toggleAdminTaskSelect(id) {
+          if (this.adminSelectedTaskIds.has(id)) this.adminSelectedTaskIds.delete(id);
+          else this.adminSelectedTaskIds.add(id);
+        },
+        async adminBatchDeleteTasks() {
+          if (this.adminSelectedTaskIds.size === 0) return;
+          if (!confirm(`⚠️ 确定要删除 ${this.adminSelectedTaskIds.size} 个任务及其所有会话吗？此操作不可撤销！`)) return;
+          try {
+            const ids = Array.from(this.adminSelectedTaskIds);
+            const res = await this.apiFetch('/admin/tasks/batch-delete', {
+              method: 'POST',
+              body: JSON.stringify({ ids }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+              const deleted = data.deleted || 0;
+              this.adminSelectedTaskIds.clear();
+              alert(deleted > 0 ? `成功删除 ${deleted} 个任务。` : '删除数为 0，可能无删除权限或任务已不存在。');
+              await this.loadAdminData();
+            } else {
+              alert(data.detail || '删除请求失败，请重试');
+            }
+          } catch (e) { alert('网络错误，删除失败'); }
+        },
+        async toggleUserActive(user) {
+          const action = user.is_active ? '封禁' : '解封';
+          if (!confirm(`确定要${action}用户「${user.username}」吗？`)) return;
+          try {
+            const res = await this.apiFetch(`/admin/users/${user.id}/toggle-active`, { method: 'POST' });
+            if (res.ok) {
+              const updated = await res.json();
+              user.is_active = updated.is_active;
+            }
+          } catch (e) { alert('操作失败'); }
+        },
+
+        // ── 工具方法 ──
+        async apiFetch(path, options = {}) {
+          return fetch(`${API_BASE}${path}`, {
+            ...options,
+            headers: {
+              'Content-Type': 'application/json',
+              ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {}),
+              ...(options.headers || {}),
+            },
+          });
+        },
+
+        tabLabel(tab) {
+          return { dashboard: 'Dashboard', tasks: '任务', review: '审核', config: '配置', admin: '⚙️ 管理后台' }[tab];
+        },
+
+        // 根据是否管理员动态生成导航 tab 列表
+        navTabs() {
+          const base = ['dashboard', 'tasks', 'review', 'config'];
+          if (this.currentUser && this.currentUser.is_admin) base.push('admin');
+          return base;
+        },
+
+        statusLabel(s) {
+          return { pending: '等待中', running: '运行中', done: '已完成', failed: '失败' }[s] || s;
+        },
+
+        statusBadgeClass(s) {
+          return {
+            pending: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
+            running: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+            done: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+            failed: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+          }[s] || '';
+        },
+
+        dimLabel(dim) {
+          return {
+            task_completion: '任务完成',
+            communication: '沟通质量',
+            compliance: '合规性',
+            efficiency: '效率',
+            user_experience: '用户体验',
+          }[dim] || dim;
+        },
+
+        formatDate(d) {
+          if (!d) return '';
+          return new Date(d).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+        },
+      };
+    }
+  </script>
+</body>
+</html>

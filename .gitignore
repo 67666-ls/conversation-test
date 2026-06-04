@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 环境变量（含 API Key，绝不提交）
+.env
+backend/.env
+
+# 数据库文件
+*.db
+*.db.bak
+*.sqlite
+
+# 临时文件
+~$*
+
+# 日志
+*.log
+server.log
+
+# 报告输出
+reports/
+data/*.db
+
+# Node
+node_modules/
+dist/
+.parcel-cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 系统
+.DS_Store
+Thumbs.db

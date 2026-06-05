@@ -1,118 +1,108 @@
-# Conversation-test
+# Conversation-Test — AI外呼智能评测与优化平台
 
-> 面向真实外呼场景的多轮对话自动评测 Web App。
-> 双 Agent 架构：被测 Agent + 12种用户人设模拟器，5维度自动评分，人工审核触发机制。
+> 美团AI Hackathon 命题二作品 | 双Agent架构 + 12种用户人设 + 5维自动评分
 
----
+## 项目简介
 
-## 功能特性
+基于大语言模型的双Agent AI外呼评测系统。**主Agent** 模拟外呼客服执行营销任务，**用户模拟器Agent** 支持12种人设自动生成真实对话场景，**评测引擎** 从5个维度自动打分并输出改进建议，辅以人工审核队列实现"机器初筛+人工复核"双保险。
 
-- **用户系统**：注册/登录/JWT 认证，评测数据按用户隔离
-- **12种用户人设**：配合/抗拒/好奇/被打断/急躁/困惑/愤怒/老年/熟练/心不在焉/挑剔/新手
-- **5维度评分**：约束遵循 · 流程覆盖 · 长度合规 · 语气自然 · 任务完成
-- **实时进度**：WebSocket 实时推送评测进度
-- **人工审核队列**：分数模糊区间/维度分歧/边界违规自动触发
-- **对话回放**：逐轮查看 Agent 与模拟用户的对话内容
-- **暗色/亮色模式**
+## 核心功能
 
----
+| 模块 | 说明 |
+|------|------|
+| **双Agent对话引擎** | 主Agent执行外呼任务 + 用户模拟器扮演12种人设自动对话 |
+| **5维自动评分** | 任务完成度(35%) / 沟通质量(25%) / 合规性(20%) / 效率(10%) / 体验(10%) |
+| **人工审核队列** | 低分/违规会话自动标记，支持通过/驳回/改分+备注 |
+| **用户系统** | 注册/登录 + 管理员后台（任务管理/批量操作） |
+| **对话回放** | 逐轮对话展示 + 维度打分依据解释 |
+| **模拟评测** | 离线脚本 `scripts/run_mock_eval.py`，不依赖API即可验证系统 |
+
+## 技术栈
+
+```
+后端：FastAPI + SQLite + SQLAlchemy + WebSocket
+前端：Alpine.js SPA（单文件HTML，无需打包）
+AI：  DeepSeek API（支持agent_fn / chat双接口）
+部署：GitHub Pages（前端）+ Railway/Render（后端）
+```
 
 ## 目录结构
 
 ```
+conversation-test/
 ├── backend/
+│   ├── main.py              # 启动入口（端口8088）
 │   ├── app/
-│   │   ├── config.py          # 配置（.env 读取）
-│   │   ├── database.py        # SQLAlchemy + SQLite
-│   │   ├── models/            # ORM 模型（User/EvalTask/EvalSession）
-│   │   ├── routers/           # API 路由（auth/tasks + WebSocket）
-│   │   ├── schemas/           # Pydantic 请求/响应模型
-│   │   └── services/          # 业务逻辑（JWT/评测服务）
-│   ├── main.py                # 启动入口
-│   └── requirements.txt
-├── code/                      # 原有核心引擎（复用）
-│   ├── user_simulator.py      # 12人设模拟器
-│   ├── evaluator.py           # 5维度评测引擎
-│   ├── llm_client.py          # DeepSeek/OpenAI 兼容客户端
-│   └── report_generator.py
+│   │   ├── services/
+│   │   │   ├── evaluator.py      # 评测引擎（5维评分+详释）
+│   │   │   ├── user_simulator.py # 12种用户人设模拟器
+│   │   │   ├── eval_service.py   # 评测流程编排
+│   │   │   └── auth.py           # 注册/登录（bcrypt）
+│   │   ├── routers/
+│   │   │   └── tasks.py          # API路由（评测/审核/管理）
+│   │   ├── models/
+│   │   │   └── user.py           # 数据模型
+│   │   └── schemas/              # Pydantic校验
+│   ├── scripts/
+│   │   └── run_mock_eval.py      # 离线模拟评测脚本
+│   └── .env.example              # 环境变量模板
 ├── frontend/
-│   └── index.html             # 单文件 SPA（Alpine.js + Tailwind CDN）
-└── data/                      # 数据文件
+│   └── index.html                # Alpine.js SPA前端
+├── reports/
+│   └── mock_eval_report.md       # 24条模拟对话评测报告
+└── data/                         # 指令模板 + 测试数据
 ```
-
----
 
 ## 快速开始
 
-### 1. 安装依赖
-
 ```bash
+# 1. 安装依赖
 cd backend
 pip install -r requirements.txt
-```
 
-### 2. 配置环境变量
-
-```bash
+# 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env，必须修改 SECRET_KEY
-```
+# 编辑 .env 填入你的 DeepSeek API Key
 
-### 3. 启动后端
-
-```bash
-cd backend
+# 3. 启动服务
 python main.py
-# 或
-uvicorn app:app --reload --port 8000
+# 访问 http://localhost:8088
 ```
 
-### 4. 打开前端
+## 12种用户人设
 
-用浏览器直接打开 `frontend/index.html`，或用任意静态文件服务器：
+| 基础人设 | 进阶人设 |
+|----------|----------|
+| 配合型 | 急躁型 / 困惑型 |
+| 抗拒型 | 愤怒型 / 挑剔型 |
+| 好奇型 | 老年型 / 新手型 |
+| 被中途打断型 | 熟练型 / 心不在焉型 |
 
-```bash
-# 方式一：Python
-cd frontend && python -m http.server 3000
-# 方式二：Node.js npx
-npx serve frontend
-```
+## 评测结果验证
 
-访问 `http://localhost:3000` 即可。
+使用 `scripts/run_mock_eval.py` 对 12人设 × 2场景 = 24条模拟对话离线评测：
 
----
+| 指标 | 数值 |
+|------|------|
+| 平均总分 | **73.2分** |
+| 等级分布 | A:0 / B:19 / C:5 |
+| 触发审核率 | 37.5% |
+| 最优人设 | 配合型、熟练型 |
+| 最差人设 | 抗拒型、愤怒型 |
 
-## API 文档
+完整报告：[reports/mock_eval_report.md](reports/mock_eval_report.md)
 
-启动后访问 `http://localhost:8000/docs` 查看完整 Swagger 文档。
+## 作品链接
 
-### 核心接口
+- **GitHub**：https://github.com/67666-ls/conversation-test
+- **模拟评测报告**：[reports/mock_eval_report.md](reports/mock_eval_report.md)
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/auth/register` | 注册 |
-| POST | `/api/auth/login` | 登录，返回 JWT |
-| POST | `/api/tasks` | 创建评测任务（后台异步执行） |
-| GET  | `/api/tasks` | 任务列表 |
-| GET  | `/api/tasks/{id}/sessions` | 获取评测结果 |
-| GET  | `/api/tasks/{id}/report` | 汇总报告 |
-| WS   | `/api/tasks/{id}/ws` | 实时进度推送 |
+## 团队
 
----
-
-## 技术架构
-
-```
-前端（Alpine.js + Tailwind CSS）
-    ↕ REST API + WebSocket
-后端（FastAPI + SQLAlchemy）
-    ↕ 复用引擎
-评测核心（user_simulator + evaluator + llm_client）
-    ↕ API 调用
-DeepSeek / OpenAI 兼容 LLM
-```
-
----
+| 成员 | 分工 |
+|------|------|
+| 刘师岐（队长） | 系统架构、后端开发、评测引擎、LLM集成、项目管理 |
+| 高鑫 | 前端交互设计、12种用户人设模拟器、场景设计、测试验证 |
 
 ## License
 

@@ -1,4 +1,4 @@
-# AI 外呼评测系统 v2
+# Conversation-test
 
 > 面向真实外呼场景的多轮对话自动评测 Web App。
 > 双 Agent 架构：被测 Agent + 12种用户人设模拟器，5维度自动评分，人工审核触发机制。
@@ -37,7 +37,7 @@
 │   └── report_generator.py
 ├── frontend/
 │   └── index.html             # 单文件 SPA（Alpine.js + Tailwind CDN）
-└── data/                      # 数据文件（.gitignore 中不提交 .db）
+└── data/                      # 数据文件
 ```
 
 ---
